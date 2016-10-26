@@ -45,7 +45,7 @@ public:
     }
 
 protected:
-    void setFormat(int, int, const Format&) Q_DECL_OVERRIDE {}
+    void applyFormat(int, int, const Format&) Q_DECL_OVERRIDE {}
 };
 
 class HighlighterBenchmark : public QObject
@@ -96,7 +96,7 @@ private Q_SLOTS:
 
 };
 
-QTEST_MAIN(HighlighterBenchmark)
+QTEST_GUILESS_MAIN(HighlighterBenchmark)
 
 #include "highlighter_benchmark.moc"
 

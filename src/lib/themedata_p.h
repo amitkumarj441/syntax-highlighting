@@ -16,44 +16,25 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef SYNTAXHIGHLIGHTING_THEMEDATA_H
-#define SYNTAXHIGHLIGHTING_THEMEDATA_H
+#ifndef SYNTAXHIGHLIGHTING_THEMEDATA_P_H
+#define SYNTAXHIGHLIGHTING_THEMEDATA_P_H
 
 #include "theme.h"
+#include "textstyledata_p.h"
+
+#include <QHash>
+#include <QSharedData>
 
 namespace SyntaxHighlighting {
-
-class TextStyleData
-{
-public:
-    // Constructor initializing all data.
-    TextStyleData()
-        : textColor(0x0)
-        , backgroundColor(0x0)
-        , selectedTextColor(0x0)
-        , selectedBackgroundColor(0x0)
-        , bold(false)
-        , italic(false)
-        , underline(false)
-        , strikeThrough(false)
-    {}
-
-    QRgb textColor;
-    QRgb backgroundColor;
-    QRgb selectedTextColor;
-    QRgb selectedBackgroundColor;
-    bool bold;
-    bool italic;
-    bool underline;
-    bool strikeThrough;
-};
 
 /**
  * Data container for a Theme.
  */
-class ThemeData
+class ThemeData : public QSharedData
 {
 public:
+    static ThemeData* get(const Theme &theme);
+
     /**
      * Default constructor, creating an uninitialized ThemeData instance.
      */
@@ -70,6 +51,8 @@ public:
      */
     QString name() const;
 
+    int revision() const;
+
     /**
      * Returns @c true if this Theme is read-only.
      * Typically, themes that are shipped by default are read-only.
@@ -77,53 +60,92 @@ public:
     bool isReadOnly() const;
 
     /**
+     * Returns the full path and filename to this Theme.
+     * Themes from the Qt resource return the Qt resource path.
+     * Themes from disk return the local path.
+     *
+     * If the theme is invalid (isValid()), an empty string is returned.
+     */
+    QString filePath() const;
+
+    /**
      * Returns the text color to be used for @p style.
      * @c 0 is returned for styles that do not specify a text color,
      * use the default text color in that case.
      */
-    QRgb textColor(TextStyle style) const;
+    QRgb textColor(Theme::TextStyle style) const;
 
     /**
      * Returns the text color for selected to be used for @p style.
      * @c 0 is returned for styles that do not specify a selected text color,
      * use the textColor() in that case.
      */
-    QRgb selectedTextColor(TextStyle style) const;
+    QRgb selectedTextColor(Theme::TextStyle style) const;
 
     /**
      * Returns the background color to be used for @p style.
      * @c 0 is returned for styles that do not specify a background color,
      * use the default background color in that case.
      */
-    QRgb backgroundColor(TextStyle style) const;
+    QRgb backgroundColor(Theme::TextStyle style) const;
 
     /**
      * Returns the background color for selected text to be used for @p style.
      * @c 0 is returned for styles that do not specify a selected background
      * color, use the default backgroundColor() in that case.
      */
-    QRgb selectedBackgroundColor(TextStyle style) const;
+    QRgb selectedBackgroundColor(Theme::TextStyle style) const;
 
-    /** Returns whether the given style should be shown in bold. */
-    bool isBold(TextStyle style) const;
-    /** Returns whether the given style should be shown in italic. */
-    bool isItalic(TextStyle style) const;
-    /** Returns whether the given style should be shown underlined. */
-    bool isUnderline(TextStyle style) const;
-    /** Returns whether the given style should be shown striked through. */
-    bool isStrikeThrough(TextStyle style) const;
+    /**
+     * Returns whether the given style should be shown in bold.
+     */
+    bool isBold(Theme::TextStyle style) const;
+
+    /**
+     * Returns whether the given style should be shown in italic.
+     */
+    bool isItalic(Theme::TextStyle style) const;
+
+    /**
+     * Returns whether the given style should be shown underlined.
+     */
+    bool isUnderline(Theme::TextStyle style) const;
+
+    /**
+     * Returns whether the given style should be shown struck through.
+     */
+    bool isStrikeThrough(Theme::TextStyle style) const;
+
+public:
+    /**
+     * Returns the editor color for the requested @p role.
+     */
+    QRgb editorColor(Theme::EditorColorRole role) const;
+
+
+    TextStyleData textStyleOverride(const QString &definitionName, const QString &attributeName) const;
 
 private:
     int m_revision;
     QString m_name;
     QString m_author;
     QString m_license;
+    QString m_filePath;
     bool m_readOnly;
-    TextStyleData m_textStyles[Others + 1];
+
+    //! TextStyles
+    TextStyleData m_textStyles[Theme::Others + 1];
+
+    //! style overrides for individual itemData entries
+    // definition name -> attribute name -> style
+    QHash<QString, QHash<QString, TextStyleData> > m_textStyleOverrides;
+
+    //! Editor area colors
+    QRgb m_editorColors[Theme::TemplateReadOnlyPlaceholder + 1];
 };
 
 }
 
 Q_DECLARE_TYPEINFO(SyntaxHighlighting::TextStyleData, Q_MOVABLE_TYPE);
 
-#endif // SYNTAXHIGHLIGHTING_THEMEDATA_H
+#endif // SYNTAXHIGHLIGHTING_THEMEDATA_P_H

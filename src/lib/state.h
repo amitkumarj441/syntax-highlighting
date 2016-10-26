@@ -21,6 +21,7 @@
 #include "kf5syntaxhighlighting_export.h"
 
 #include <QExplicitlySharedDataPointer>
+#include <QTypeInfo>
 
 namespace SyntaxHighlighting {
 
@@ -53,11 +54,23 @@ public:
      */
     bool operator!=(const State &other) const;
 
+    /**
+     * Returns whether or not indentation-based folding is enabled in this state.
+     * When using a Definition with indentation-based folding, use
+     * this method to check if indentation-based folding has been
+     * suspended in the current line.
+     *
+     * @see Definition::indentationBasedFoldingEnabled()
+     */
+    bool indentationBasedFoldingEnabled() const;
+
 private:
     friend class StateData;
     QExplicitlySharedDataPointer<StateData> d;
 };
 
 }
+
+Q_DECLARE_TYPEINFO(SyntaxHighlighting::State, Q_MOVABLE_TYPE);
 
 #endif // SYNTAXHIGHLIGHTING_STATE_H

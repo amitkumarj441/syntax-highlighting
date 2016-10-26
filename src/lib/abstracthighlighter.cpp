@@ -18,6 +18,7 @@
 #include "abstracthighlighter.h"
 #include "context_p.h"
 #include "definition_p.h"
+#include "foldingregion.h"
 #include "format.h"
 #include "repository.h"
 #include "rule_p.h"
@@ -56,6 +57,9 @@ void AbstractHighlighterPrivate::ensureDefinitionLoaded()
         m_definition = defData->repo->definitionForName(m_definition.name());
         defData = DefinitionData::get(m_definition);
     }
+
+    if (Q_UNLIKELY(!defData->repo && !defData->name.isEmpty()))
+        qCCritical(Log) << "Repository got deleted while a highlighter is still active!";
 
     if (m_definition.isValid())
         defData->load();
@@ -109,11 +113,11 @@ State AbstractHighlighter::highlightLine(const QString& text, const State &state
     // verify definition, deal with no highlighting being enabled
     d->ensureDefinitionLoaded();
     if (!d->m_definition.isValid()) {
-        setFormat(0, text.size(), Format());
+        applyFormat(0, text.size(), Format());
         return State();
     }
 
-    // verify/intialize state
+    // verify/initialize state
     auto defData = DefinitionData::get(d->m_definition);
     auto newState = state;
     auto stateData = StateData::get(newState);
@@ -130,7 +134,7 @@ State AbstractHighlighter::highlightLine(const QString& text, const State &state
     if (text.isEmpty()) {
         while (!stateData->topContext()->lineEmptyContext().isStay())
             d->switchContext(stateData, stateData->topContext()->lineEmptyContext(), QStringList());
-        setFormat(0, 0, Format());
+        applyFormat(0, 0, Format());
         return newState;
     }
 
@@ -150,7 +154,7 @@ State AbstractHighlighter::highlightLine(const QString& text, const State &state
         int newOffset = 0;
         QString newFormat;
         auto newLookupContext = currentLookupContext;
-        foreach (auto rule, stateData->topContext()->rules()) {
+        foreach (const auto &rule, stateData->topContext()->rules()) {
             if (skipOffsets.value(rule.get()) > offset)
                 continue;
 
@@ -170,6 +174,12 @@ State AbstractHighlighter::highlightLine(const QString& text, const State &state
                 skipOffsets.insert(rule.get(), newResult.skipOffset());
             if (newOffset <= offset)
                 continue;
+
+            // apply folding
+            if (rule->endRegion().isValid())
+                applyFolding(offset, newOffset - offset, rule->endRegion());
+            if (rule->beginRegion().isValid())
+                applyFolding(offset, newOffset - offset, rule->beginRegion());
 
             if (rule->isLookAhead()) {
                 Q_ASSERT(!rule->context().isStay());
@@ -201,7 +211,7 @@ State AbstractHighlighter::highlightLine(const QString& text, const State &state
 
         if (newFormat != currentFormat /*|| currentLookupDef != newLookupDef*/) {
             if (offset > 0)
-                setFormat(beginOffset, offset - beginOffset, currentLookupContext->formatByName(currentFormat));
+                applyFormat(beginOffset, offset - beginOffset, currentLookupContext->formatByName(currentFormat));
             beginOffset = offset;
             currentFormat = newFormat;
             currentLookupContext = newLookupContext;
@@ -212,7 +222,7 @@ State AbstractHighlighter::highlightLine(const QString& text, const State &state
     } while (offset < text.size());
 
     if (beginOffset < offset)
-        setFormat(beginOffset, text.size() - beginOffset, currentLookupContext->formatByName(currentFormat));
+        applyFormat(beginOffset, text.size() - beginOffset, currentLookupContext->formatByName(currentFormat));
 
     while (!stateData->topContext()->lineEndContext().isStay() && !lineContinuation) {
         if (!d->switchContext(stateData, stateData->topContext()->lineEndContext(), QStringList()))
@@ -238,4 +248,11 @@ bool AbstractHighlighterPrivate::switchContext(StateData *data, const ContextSwi
 
     Q_ASSERT(!data->isEmpty());
     return true;
+}
+
+void AbstractHighlighter::applyFolding(int offset, int length, FoldingRegion region)
+{
+    Q_UNUSED(offset);
+    Q_UNUSED(length);
+    Q_UNUSED(region);
 }

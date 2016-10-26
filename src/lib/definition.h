@@ -20,10 +20,12 @@
 
 #include "kf5syntaxhighlighting_export.h"
 
+#include <QTypeInfo>
+
 #include <memory>
 
-class QJsonObject;
 class QString;
+class QStringList;
 template <typename T> class QVector;
 
 namespace SyntaxHighlighting {
@@ -31,7 +33,6 @@ namespace SyntaxHighlighting {
 class Context;
 class Format;
 class KeywordList;
-class Repository;
 
 class DefinitionData;
 
@@ -91,6 +92,16 @@ public:
      */
     Definition& operator=(const Definition &rhs);
 
+    /**
+     * Checks two definitions for equality.
+     */
+    bool operator==(const Definition &other) const;
+
+    /**
+     * Checks two definitions for inequality.
+     */
+    bool operator!=(const Definition &other) const;
+
     /** Checks whether this object refers to a valid syntax definition. */
     bool isValid() const;
     /** Returns the full path to the definition XML file containing
@@ -118,7 +129,7 @@ public:
      */
     QVector<QString> extensions() const;
     /** Returns the definition version. */
-    float version() const;
+    int version() const;
     /**
      * Returns the definition priority.
      * A Definition with higher priority wins over Definitions with lower priorities.
@@ -128,22 +139,47 @@ public:
      * displayed to the user.
      */
     bool isHidden() const;
-    /** Generalized language style, used for indention. */
+    /** Generalized language style, used for indentation. */
     QString style() const;
-    /** Indention style to be used for this syntax. */
+    /** Indentation style to be used for this syntax. */
     QString indenter() const;
     /** Name and email of the author of this syntax definition. */
     QString author() const;
     /** License of this syntax definition. */
     QString license() const;
 
+    /**
+     * Returns whether indentation-based folding is enabled.
+     * An example for indentation-based folding is Python.
+     * When indentation-based folding is enabled, make sure to also check
+     * foldingIgnoreList() for lines that should be treated as empty.
+     *
+     * @see foldingIgnoreList(), State::indentationBasedFoldingEnabled()
+     */
+    bool indentationBasedFoldingEnabled() const;
+
+    /**
+     * If indentationBasedFoldingEnabled() returns @c true, this function returns
+     * a list of regular expressions that represent empty lines. That is, all
+     * lines matching entirely one of the regular expressions should be treated
+     * as empty lines when calculating the indentation-based folding ranges.
+     *
+     * @note This list is only of relevance, if indentationBasedFoldingEnabled()
+     *       returns @c true.
+     *
+     * @see indentationBasedFoldingEnabled()
+     */
+    QStringList foldingIgnoreList() const;
+
 private:
     friend class DefinitionData;
     friend class DefinitionRef;
-    Definition(const std::shared_ptr<DefinitionData> &dd);
+    explicit Definition(const std::shared_ptr<DefinitionData> &dd);
     std::shared_ptr<DefinitionData> d;
 };
 
 }
+
+Q_DECLARE_TYPEINFO(SyntaxHighlighting::Definition, Q_MOVABLE_TYPE);
 
 #endif

@@ -21,47 +21,14 @@
 #include "kf5syntaxhighlighting_export.h"
 
 #include <QColor>
-
-#include <memory>
+#include <QExplicitlySharedDataPointer>
+#include <qobjectdefs.h>
+#include <QTypeInfo>
 
 namespace SyntaxHighlighting {
 
 class ThemeData;
-
-/** Default styles that can be referenced from syntax definition XML files. */
-enum TextStyle {
-    Normal = 0,
-    Keyword,
-    Function,
-    Variable,
-    ControlFlow,
-    Operator,
-    BuiltIn,
-    Extension,
-    Preprocessor,
-    Attribute,
-    Char,
-    SpecialChar,
-    String,
-    VerbatimString,
-    SpecialString,
-    Import,
-    DataType,
-    DecVal,
-    BaseN,
-    Float,
-    Constant,
-    Comment,
-    Documentation,
-    Annotation,
-    CommentVar,
-    RegionMarker,
-    Information,
-    Warning,
-    Alert,
-    Error,
-    Others
-};
+class RepositoryPrivate;
 
 /**
  * Color theme definition used for highlighting.
@@ -92,7 +59,8 @@ enum TextStyle {
  * editor, you also need to paint the background of the editing widget. In
  * addition, the editor may support showing line numbers, a folding bar, a
  * highlight for the current text line, and similar features. All these colors
- * are defined in terms of the "editor colors".
+ * are defined in terms of the "editor colors" and accessible by calling
+ * editorColor() with the desired enum EditorColorRole.
  *
  * @section theme_access Accessing a Theme
  *
@@ -105,7 +73,163 @@ enum TextStyle {
  */
 class KF5SYNTAXHIGHLIGHTING_EXPORT Theme
 {
+    Q_GADGET
 public:
+    /**
+     * Default styles that can be referenced from syntax definition XML files.
+     * Make sure to choose readable colors with good contrast especially in
+     * combination with the EditorColorRole%s.
+     */
+    enum TextStyle {
+        //! Default text style for normal text and source code without
+        //! special highlighting.
+        Normal = 0,
+        //! Text style for language keywords.
+        Keyword,
+        //! Text style for function definitions and function calls.
+        Function,
+        //! Text style for variables, if applicable. For instance, variables in
+        //! PHP typically start with a '$', so all identifiers following the
+        //! pattern $foo are highlighted as variable.
+        Variable,
+        //! Text style for control flow highlighting, such as @e if, @e then,
+        //! @e else, @e return, or @e continue.
+        ControlFlow,
+        //! Text style for operators such as +, -, *, / and :: etc.
+        Operator,
+        //! Text style for built-in language classes and functions.
+        BuiltIn,
+        //! Text style for well-known extensions, such as Qt or boost.
+        Extension,
+        //! Text style for preprocessor statements.
+        Preprocessor,
+        //! Text style for attributes of functions or objects, e.g. \@override
+        //! in Java, or __declspec(...) and __attribute__((...)) in C++.
+        Attribute,
+        //! Text style for single characters such as 'a'.
+        Char,
+        //! Text style for escaped characters in strings, such as "hello\n".
+        SpecialChar,
+        //! Text style for strings, for instance "hello world".
+        String,
+        //! Text style for verbatim strings such as HERE docs.
+        VerbatimString,
+        //! Text style for special strings such as regular expressions in
+        //! ECMAScript or the LaTeX math mode.
+        SpecialString,
+        //! Text style for includes, imports, modules, or LaTeX packages.
+        Import,
+        //! Text style for data types such as int, char, float etc.
+        DataType,
+        //! Text style for decimal values.
+        DecVal,
+        //! Text style for numbers with base other than 10.
+        BaseN,
+        //! Text style for floating point numbers.
+        Float,
+        //! Text style for language constants, e.g. True, False, None in Python
+        //! or nullptr in C/C++.
+        Constant,
+        //! Text style for normal comments.
+        Comment,
+        //! Text style for comments that reflect API documentation, such as
+        //! doxygen /** */ comments.
+        Documentation,
+        //! Text style for annotations in comments, such as \@param in Doxygen
+        //! or JavaDoc.
+        Annotation,
+        //! Text style that refers to variables in a comment, such as after
+        //! \@param \<identifier\> in Doxygen or JavaDoc.
+        CommentVar,
+        //! Text style for region markers, typically defined by BEGIN/END.
+        RegionMarker,
+        //! Text style for information, such as the keyword \@note in Doxygen.
+        Information,
+        //! Text style for warnings, such as the keyword \@warning in Doxygen.
+        Warning,
+        //! Text style for comment specials such as TODO and WARNING in
+        //! comments.
+        Alert,
+        //! Text style indicating wrong syntax.
+        Error,
+        //! Text style for attributes that do not match any of the other default
+        //! styles.
+        Others
+    };
+    Q_ENUM(TextStyle)
+
+    /**
+     * Editor color roles, used to paint line numbers, editor background etc.
+     * The colors typically should have good contrast with the colors used
+     * in the TextStyle%s.
+     */
+    enum EditorColorRole {
+        //! Background color for the editing area.
+        BackgroundColor = 0,
+        //! Background color for selected text.
+        TextSelection,
+        //! Background color for the line of the current text cursor.
+        CurrentLine,
+        //! Background color for matching text while searching.
+        SearchHighlight,
+        //! Background color for replaced text for a search & replace action.
+        ReplaceHighlight,
+        //! Background color for matching bracket pairs (including quotes)
+        BracketMatching,
+        //! Foreground color for visualizing tabs and trailing spaces.
+        TabMarker,
+        //! Color used to underline spell check errors.
+        SpellChecking,
+        //! Color used to draw vertical indentation levels, typically a line.
+        IndentationLine,
+        //! Background color for the icon border.
+        IconBorder,
+        //! Background colors for code folding regions in the text area, as well
+        //! as code folding indicators in the code folding border.
+        CodeFolding,
+        //! Foreground color for drawing the line numbers. This should have a
+        //! good contrast with the IconBorder background color.
+        LineNumbers,
+        //! Foreground color for drawing the current line number. This should
+        //! have a good contrast with the IconBorder background color.
+        CurrentLineNumber,
+        //! Color used in the icon border to indicate dynamically wrapped lines.
+        //! This color should have a good contrast with the IconBorder
+        //! background color.
+        WordWrapMarker,
+        //! Color used to draw a vertical line for marking changed lines.
+        ModifiedLines,
+        //! Color used to draw a vertical line for marking saved lines.
+        SavedLines,
+        //! Line color used to draw separator lines, e.g. at column 80 in the
+        //! text editor area.
+        Separator,
+        //! Background color for bookmarks.
+        MarkBookmark,
+        //! Background color for active breakpoints.
+        MarkBreakpointActive,
+        //! Background color for a reached breakpoint.
+        MarkBreakpointReached,
+        //! Background color for inactive (disabled) breakpoints.
+        MarkBreakpointDisabled,
+        //! Background color for marking the current execution position.
+        MarkExecution,
+        //! Background color for general warning marks.
+        MarkWarning,
+        //! Background color for general error marks.
+        MarkError,
+        //! Background color for text templates (snippets).
+        TemplateBackground,
+        //! Background color for all editable placeholders in text templates.
+        TemplatePlaceholder,
+        //! Background color for the currently active placeholder in text
+        //! templates.
+        TemplateFocusedPlaceholder,
+        //! Background color for read-only placeholders in text templates.
+        TemplateReadOnlyPlaceholder
+    };
+    Q_ENUM(EditorColorRole)
+
     /**
      * Default constructor, creating an invalid Theme, see isValid().
      */
@@ -151,6 +275,15 @@ public:
     bool isReadOnly() const;
 
     /**
+     * Returns the full path and file name to this Theme.
+     * Themes from the Qt resource return the Qt resource path.
+     * Themes from disk return the local path.
+     *
+     * If the theme is invalid (isValid()), an empty string is returned.
+     */
+    QString filePath() const;
+
+    /**
      * Returns the text color to be used for @p style.
      * @c 0 is returned for styles that do not specify a text color,
      * use the default text color in that case.
@@ -178,28 +311,49 @@ public:
      */
     QRgb selectedBackgroundColor(TextStyle style) const;
 
-    /** Returns whether the given style should be shown in bold. */
+    /**
+     * Returns whether the given style should be shown in bold.
+     */
     bool isBold(TextStyle style) const;
-    /** Returns whether the given style should be shown in italic. */
+
+    /**
+     * Returns whether the given style should be shown in italic.
+     */
     bool isItalic(TextStyle style) const;
-    /** Returns whether the given style should be shown underlined. */
+
+    /**
+     * Returns whether the given style should be shown underlined.
+     */
     bool isUnderline(TextStyle style) const;
-    /** Returns whether the given style should be shown striked through. */
+
+    /**
+     * Returns whether the given style should be shown struck through.
+     */
     bool isStrikeThrough(TextStyle style) const;
 
 public:
     /**
+     * Returns the editor color for the requested @p role.
+     */
+    QRgb editorColor(EditorColorRole role) const;
+
+private:
+    /**
      * Constructor taking a shared ThemeData instance.
      */
-    Theme(std::shared_ptr<ThemeData> data);
+    explicit Theme(ThemeData* data);
+    friend class RepositoryPrivate;
+    friend class ThemeData;
 
 private:
     /**
      * Shared data holder.
      */
-    std::shared_ptr<ThemeData> m_data;
+    QExplicitlySharedDataPointer<ThemeData> m_data;
 };
 
 }
+
+Q_DECLARE_TYPEINFO(SyntaxHighlighting::Theme, Q_MOVABLE_TYPE);
 
 #endif // SYNTAXHIGHLIGHTING_THEME_H

@@ -23,6 +23,7 @@
 namespace SyntaxHighlighting {
 
 class Definition;
+class DefinitionData;
 class DefinitionPrivate;
 
 /** Weak reference for Definition instances.
@@ -37,7 +38,7 @@ class DefinitionRef
 {
 public:
     DefinitionRef();
-    DefinitionRef(const Definition &def);
+    explicit DefinitionRef(const Definition &def);
     ~DefinitionRef();
     DefinitionRef& operator=(const Definition &def);
 

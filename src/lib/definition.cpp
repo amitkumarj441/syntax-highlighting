@@ -22,6 +22,7 @@
 
 #include "context_p.h"
 #include "format.h"
+#include "repository_p.h"
 #include "rule_p.h"
 #include "syntaxhighlighting_logging.h"
 #include "syntaxhighlighting_version.h"
@@ -32,6 +33,7 @@
 #include <QFile>
 #include <QHash>
 #include <QJsonObject>
+#include <QStringList>
 #include <QVector>
 #include <QXmlStreamReader>
 
@@ -42,6 +44,7 @@ using namespace SyntaxHighlighting;
 DefinitionData::DefinitionData() :
     repo(Q_NULLPTR),
     delimiters(QStringLiteral("\t !%&()*+,-./:;<=>?[\\]^{|}~")), // must be sorted!
+    indentationBasedFolding(false),
     caseSensitive(Qt::CaseSensitive),
     version(0.0f),
     priority(0),
@@ -85,6 +88,16 @@ Definition& Definition::operator=(const Definition &rhs)
     return *this;
 }
 
+bool Definition::operator==(const Definition &other) const
+{
+    return d->fileName == other.d->fileName;
+}
+
+bool Definition::operator!=(const Definition& other) const
+{
+    return d->fileName != other.d->fileName;
+}
+
 bool Definition::isValid() const
 {
     return d->repo && !d->fileName.isEmpty() && !d->name.isEmpty();
@@ -125,7 +138,7 @@ QVector<QString> Definition::extensions() const
     return d->extensions;
 }
 
-float Definition::version() const
+int Definition::version() const
 {
     return d->version;
 }
@@ -158,6 +171,18 @@ QString Definition::author() const
 QString Definition::license() const
 {
     return d->license;
+}
+
+bool Definition::indentationBasedFoldingEnabled() const
+{
+    d->load();
+    return d->indentationBasedFolding;
+}
+
+QStringList Definition::foldingIgnoreList() const
+{
+    d->load();
+    return d->foldingIgnoreList;
 }
 
 Context* DefinitionData::initialContext() const
@@ -282,7 +307,7 @@ bool DefinitionData::loadMetaData(const QString &file, const QJsonObject &obj)
 {
     name     = obj.value(QLatin1String("name")).toString();
     section  = obj.value(QLatin1String("section")).toString();
-    version  = obj.value(QLatin1String("version")).toDouble();
+    version  = obj.value(QLatin1String("version")).toInt();
     priority = obj.value(QLatin1String("priority")).toInt();
     style    = obj.value(QLatin1String("style")).toString();
     author   = obj.value(QLatin1String("author")).toString();
@@ -311,9 +336,10 @@ bool DefinitionData::loadLanguage(QXmlStreamReader &reader)
 
     name = reader.attributes().value(QStringLiteral("name")).toString();
     section = reader.attributes().value(QStringLiteral("section")).toString();
+    // toFloat instead of toInt for backward compatibility with old Kate files
     version = reader.attributes().value(QStringLiteral("version")).toFloat();
     priority = reader.attributes().value(QStringLiteral("priority")).toInt();
-    hidden = reader.attributes().value(QStringLiteral("hidden")) == QLatin1String("true");
+    hidden = Xml::attrToBool(reader.attributes().value(QStringLiteral("hidden")));
     style = reader.attributes().value(QStringLiteral("style")).toString();
     indenter = reader.attributes().value(QStringLiteral("indenter")).toString();
     author = reader.attributes().value(QStringLiteral("author")).toString();
@@ -394,6 +420,7 @@ void DefinitionData::loadItemData(QXmlStreamReader& reader)
             case QXmlStreamReader::StartElement:
                 if (reader.name() == QLatin1String("itemData")) {
                     Format f;
+                    f.setDefinition(q);
                     f.load(reader);
                     formats.insert(f.name(), f);
                     reader.readNext();
@@ -415,9 +442,14 @@ void DefinitionData::loadGeneral(QXmlStreamReader& reader)
     Q_ASSERT(reader.tokenType() == QXmlStreamReader::StartElement);
     reader.readNext();
 
+    // reference counter to count XML child elements, to not return too early
+    int elementRefCounter = 1;
+
     while (!reader.atEnd()) {
         switch (reader.tokenType()) {
             case QXmlStreamReader::StartElement:
+                ++elementRefCounter;
+
                 if (reader.name() == QLatin1String("keywords")) {
                     if (reader.attributes().hasAttribute(QStringLiteral("casesensitive")))
                         caseSensitive = Xml::attrToBool(reader.attributes().value(QStringLiteral("casesensitive"))) ? Qt::CaseSensitive : Qt::CaseInsensitive;
@@ -427,13 +459,49 @@ void DefinitionData::loadGeneral(QXmlStreamReader& reader)
                     delimiters.truncate(std::distance(delimiters.begin(), it));
                     foreach (const auto c, reader.attributes().value(QLatin1String("weakDeliminator")))
                         delimiters.remove(c);
+                } else if (reader.name() == QLatin1String("folding")) {
+                    if (reader.attributes().hasAttribute(QStringLiteral("indentationsensitive")))
+                        indentationBasedFolding = Xml::attrToBool(reader.attributes().value(QStringLiteral("indentationsensitive")));
+                } else if (reader.name() == QLatin1String("emptyLines")) {
+                    loadFoldingIgnoreList(reader);
                 } else {
                     reader.skipCurrentElement();
                 }
                 reader.readNext();
                 break;
             case QXmlStreamReader::EndElement:
-                return;
+                --elementRefCounter;
+                if (elementRefCounter == 0)
+                    return;
+            default:
+                reader.readNext();
+                break;
+        }
+    }
+}
+
+void DefinitionData::loadFoldingIgnoreList(QXmlStreamReader& reader)
+{
+    Q_ASSERT(reader.name() == QLatin1String("emptyLines"));
+    Q_ASSERT(reader.tokenType() == QXmlStreamReader::StartElement);
+    reader.readNext();
+
+    // reference counter to count XML child elements, to not return too early
+    int elementRefCounter = 1;
+
+    while (!reader.atEnd()) {
+        switch (reader.tokenType()) {
+            case QXmlStreamReader::StartElement:
+                ++elementRefCounter;
+                if (reader.name() == QLatin1String("emptyLine")) {
+                    foldingIgnoreList << reader.attributes().value(QStringLiteral("regexpr")).toString();
+                }
+                reader.readNext();
+                break;
+            case QXmlStreamReader::EndElement:
+                --elementRefCounter;
+                if (elementRefCounter == 0)
+                    return;
             default:
                 reader.readNext();
                 break;
@@ -457,6 +525,11 @@ bool DefinitionData::checkKateVersion(const QStringRef& verStr)
     }
 
     return true;
+}
+
+quint16 DefinitionData::foldingRegionId(const QString &foldName)
+{
+    return RepositoryPrivate::get(repo)->foldingRegionId(name, foldName);
 }
 
 DefinitionRef::DefinitionRef()

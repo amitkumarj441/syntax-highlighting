@@ -20,6 +20,8 @@
 
 #include "kf5syntaxhighlighting_export.h"
 
+#include <QTypeInfo>
+
 #include <memory>
 
 class QColor;
@@ -28,6 +30,7 @@ class QXmlStreamReader;
 
 namespace SyntaxHighlighting {
 
+class DefinitionRef;
 class FormatPrivate;
 class Theme;
 
@@ -54,11 +57,15 @@ public:
 
     /** Returns @c true if the combination of this format and the theme @p theme
      *  do not change the default text format in any way.
+     *  This is useful for output formats where changing formatting implies cost,
+     *  and thus benefit from optimizing the default case of not having any format
+     *  applied. If you make use of this, make sure to set the default text style
+     *  to what the corresponding theme sets for Theme::Normal.
      */
-    bool isNormal(const Theme &theme) const;
+    bool isDefaultTextStyle(const Theme &theme) const;
 
     /** Returns @c true if the combination of this format and the theme @p theme
-     *  change the foreground color.
+     *  change the foreground color compared to the default format.
      */
     bool hasTextColor(const Theme &theme) const;
     /** Returns the foreground color of the combination of this format and the
@@ -70,7 +77,7 @@ public:
      */
     QColor selectedTextColor(const Theme &theme) const;
     /** Returns @c true if the combination of this format and the theme @p theme
-     *  change the background color.
+     *  change the background color compared to the default format.
      */
     bool hasBackgroundColor(const Theme &theme) const;
     /** Returns the background color of the combination of this format and the
@@ -95,7 +102,7 @@ public:
      */
     bool isUnderline(const Theme &theme) const;
     /** Returns @c true if the combination of this format and the given theme
-     *  results in striked through text.
+     *  results in struck through text.
      */
     bool isStrikeThrough(const Theme &theme) const;
 
@@ -106,9 +113,12 @@ public:
 
 private:
     friend class DefinitionData;
+    void setDefinition(const DefinitionRef &def);
     void load(QXmlStreamReader &reader);
     std::shared_ptr<FormatPrivate> d;
 };
 }
+
+Q_DECLARE_TYPEINFO(SyntaxHighlighting::Format, Q_MOVABLE_TYPE);
 
 #endif // SYNTAXHIGHLIGHTING_FORMAT_H

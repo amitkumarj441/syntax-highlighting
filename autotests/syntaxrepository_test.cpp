@@ -17,6 +17,7 @@
 
 #include <abstracthighlighter.h>
 #include <definition.h>
+#include <format.h>
 #include <repository.h>
 #include <state.h>
 #include <theme.h>
@@ -32,11 +33,13 @@ class NullHighlighter : public AbstractHighlighter
 {
 public:
     using AbstractHighlighter::highlightLine;
-    void setFormat(int offset, int length, const Format &format) Q_DECL_OVERRIDE
+    void applyFormat(int offset, int length, const Format &format) Q_DECL_OVERRIDE
     {
         Q_UNUSED(offset);
         Q_UNUSED(length);
-        Q_UNUSED(format);
+        // only here to ensure we don't crash
+        format.isDefaultTextStyle(theme());
+        format.textColor(theme());
     }
 };
 
@@ -86,7 +89,7 @@ private Q_SLOTS:
 
     void testLoadAll()
     {
-        foreach (auto def, m_repo.definitions()) {
+        foreach (const auto &def, m_repo.definitions()) {
             QVERIFY(!def.name().isEmpty());
             QVERIFY(!def.translatedName().isEmpty());
             QVERIFY(!def.section().isEmpty());
@@ -131,6 +134,18 @@ private Q_SLOTS:
         QVERIFY(def.extensions().contains(QLatin1String(".htaccess*")));
     }
 
+    void testGeneralMetaData()
+    {
+        auto def = m_repo.definitionForName(QLatin1String("C++"));
+        QVERIFY(def.isValid());
+        QVERIFY(!def.indentationBasedFoldingEnabled());
+
+        def = m_repo.definitionForName(QLatin1String("Python"));
+        QVERIFY(def.isValid());
+        QVERIFY(def.indentationBasedFoldingEnabled());
+        QCOMPARE(def.foldingIgnoreList(), QStringList() << QLatin1String("(?:\\s+|\\s*#.*)"));
+    }
+
     void testReload()
     {
         auto def = m_repo.definitionForName(QLatin1String("QML"));
@@ -151,18 +166,20 @@ private Q_SLOTS:
         QCOMPARE(hl.definition().name(), QLatin1String("QML"));
     }
 
-    void testThemes()
+    void testLifetime()
     {
-        QVERIFY(!m_repo.themes().isEmpty());
-        Q_FOREACH (const auto theme, m_repo.themes()) {
-            QVERIFY(theme.isValid());
-            QVERIFY(!theme.name().isEmpty());
-            QVERIFY(m_repo.theme(theme.name()).isValid());
+        // common mistake with value-type like Repo API, make sure this doesn'T crash
+        NullHighlighter hl;
+        {
+            Repository repo;
+            hl.setDefinition(repo.definitionForName(QLatin1String("C++")));
+            hl.setTheme(repo.defaultTheme());
         }
+        hl.highlightLine(QLatin1String("/**! @todo this should not crash .*/"), State());
     }
 };
 }
 
-QTEST_MAIN(SyntaxHighlighting::RepositoryTest)
+QTEST_GUILESS_MAIN(SyntaxHighlighting::RepositoryTest)
 
 #include "syntaxrepository_test.moc"

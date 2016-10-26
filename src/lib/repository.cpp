@@ -16,6 +16,7 @@
 */
 
 #include "repository.h"
+#include "repository_p.h"
 #include "definition.h"
 #include "definition_p.h"
 #include "theme.h"
@@ -33,25 +34,19 @@
 
 using namespace SyntaxHighlighting;
 
-namespace SyntaxHighlighting {
-class RepositoryPrivate
-{
-public:
-    void load(Repository *repo);
-    void loadFolder(Repository *repo, const QString &path);
-    bool loadFolderFromIndex(Repository *repo, const QString &path);
-    void addDefinition(const Definition &def);
-
-    QHash<QString, Definition> m_defs;
-    QVector<Definition> m_sortedDefs;
-
-    QVector<Theme> m_themes;
-};
-}
-
 static void initResource()
 {
     Q_INIT_RESOURCE(syntax_data);
+}
+
+RepositoryPrivate::RepositoryPrivate() :
+    m_foldingRegionId(0)
+{
+}
+
+RepositoryPrivate* RepositoryPrivate::get(Repository *repo)
+{
+    return repo->d.get();
 }
 
 Repository::Repository() :
@@ -63,6 +58,10 @@ Repository::Repository() :
 
 Repository::~Repository()
 {
+    // reset repo so we can detect in still alive definition instances
+    // that the repo was deleted
+    foreach (const auto &def, d->m_sortedDefs)
+        DefinitionData::get(def)->repo = Q_NULLPTR;
 }
 
 Definition Repository::definitionForName(const QString& defName) const
@@ -117,17 +116,24 @@ Theme Repository::theme(const QString &themeName) const
     return Theme();
 }
 
+Theme Repository::defaultTheme(Repository::DefaultTheme t)
+{
+    if (t == DarkTheme)
+        return theme(QLatin1String("Breeze Dark"));
+    return theme(QLatin1String("Default"));
+}
+
 void RepositoryPrivate::load(Repository *repo)
 {
     auto dirs = QStandardPaths::locateAll(QStandardPaths::GenericDataLocation, QStringLiteral("org.kde.syntax-highlighting/syntax"), QStandardPaths::LocateDirectory);
     foreach (const auto &dir, dirs)
-        loadFolder(repo, dir);
-    // backward compatiblity with kate
+        loadSyntaxFolder(repo, dir);
+    // backward compatibility with Kate
     dirs = QStandardPaths::locateAll(QStandardPaths::GenericDataLocation, QStringLiteral("katepart5/syntax"), QStandardPaths::LocateDirectory);
     foreach (const auto &dir, dirs)
-        loadFolder(repo, dir);
+        loadSyntaxFolder(repo, dir);
 
-    loadFolder(repo, QStringLiteral(":/syntaxhighlighting/syntax"));
+    loadSyntaxFolder(repo, QStringLiteral(":/org.kde.syntax-highlighting/syntax"));
 
     m_sortedDefs.reserve(m_defs.size());
     for (auto it = m_defs.constBegin(); it != m_defs.constEnd(); ++it)
@@ -140,19 +146,15 @@ void RepositoryPrivate::load(Repository *repo)
     });
 
     // load themes
-    const QString themePath = QStringLiteral(":/syntaxhighlighting/themes");
-    QDirIterator it(themePath);
-    while (it.hasNext()) {
-        std::shared_ptr<ThemeData> themeData = std::make_shared<ThemeData>();
-        if (themeData->load(it.next())) {
-            m_themes.push_back(Theme(themeData));
-        }
-    }
+    dirs = QStandardPaths::locateAll(QStandardPaths::GenericDataLocation, QStringLiteral("org.kde.syntax-highlighting/themes"), QStandardPaths::LocateDirectory);
+    foreach (const auto &dir, dirs)
+        loadThemeFolder(dir);
+    loadThemeFolder(QStringLiteral(":/org.kde.syntax-highlighting/themes"));
 }
 
-void RepositoryPrivate::loadFolder(Repository *repo, const QString &path)
+void RepositoryPrivate::loadSyntaxFolder(Repository *repo, const QString &path)
 {
-    if (loadFolderFromIndex(repo, path))
+    if (loadSyntaxFolderFromIndex(repo, path))
         return;
 
     QDirIterator it(path);
@@ -165,7 +167,7 @@ void RepositoryPrivate::loadFolder(Repository *repo, const QString &path)
     }
 }
 
-bool RepositoryPrivate::loadFolderFromIndex(Repository *repo, const QString &path)
+bool RepositoryPrivate::loadSyntaxFolderFromIndex(Repository *repo, const QString &path)
 {
     QFile indexFile(path + QLatin1String("/index.katesyntax"));
     if (!indexFile.open(QFile::ReadOnly))
@@ -200,15 +202,56 @@ void RepositoryPrivate::addDefinition(const Definition &def)
     m_defs.insert(def.name(), def);
 }
 
+void RepositoryPrivate::loadThemeFolder(const QString &path)
+{
+    QDirIterator it(path);
+    while (it.hasNext()) {
+        auto themeData = std::unique_ptr<ThemeData>(new ThemeData);
+        if (themeData->load(it.next()))
+            addTheme(Theme(themeData.release()));
+    }
+}
+
+static int themeRevision(const Theme &theme)
+{
+    auto data = ThemeData::get(theme);
+    return data->revision();
+}
+
+void RepositoryPrivate::addTheme(const Theme &theme)
+{
+    const auto it = std::lower_bound(m_themes.begin(), m_themes.end(), theme, [](const Theme &lhs, const Theme &rhs) {
+        return lhs.name() < rhs.name();
+    });
+    if (it == m_themes.end() || (*it).name() != theme.name()) {
+        m_themes.insert(it, theme);
+        return;
+    }
+    if (themeRevision(*it) < themeRevision(theme))
+        *it = theme;
+}
+
+quint16 RepositoryPrivate::foldingRegionId(const QString &defName, const QString &foldName)
+{
+    const auto it = m_foldingRegionIds.constFind(qMakePair(defName, foldName));
+    if (it != m_foldingRegionIds.constEnd())
+        return it.value();
+    m_foldingRegionIds.insert(qMakePair(defName, foldName), ++m_foldingRegionId);
+    return m_foldingRegionId;
+}
+
 void Repository::reload()
 {
     qCDebug(Log) << "Reloading syntax definitions!";
-    foreach (auto def, d->m_sortedDefs)
+    foreach (const auto &def, d->m_sortedDefs)
         DefinitionData::get(def)->clear();
     d->m_defs.clear();
     d->m_sortedDefs.clear();
 
     d->m_themes.clear();
+
+    d->m_foldingRegionId = 0;
+    d->m_foldingRegionIds.clear();
 
     d->load(this);
 }

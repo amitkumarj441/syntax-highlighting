@@ -21,6 +21,7 @@
 #include "repository.h"
 #include "rule_p.h"
 #include "syntaxhighlighting_logging.h"
+#include "xml_p.h"
 
 #include <QDebug>
 #include <QString>
@@ -28,9 +29,10 @@
 
 using namespace SyntaxHighlighting;
 
-Context::Context() :
-    m_resolveState(Unknown),
-    m_fallthrough(false)
+Context::Context()
+    : m_resolveState(Unknown)
+    , m_fallthrough(false)
+    , m_noIndentationBasedFolding(false)
 {
 }
 
@@ -78,6 +80,14 @@ ContextSwitch Context::fallthroughContext() const
     return m_fallthroughContext;
 }
 
+bool Context::indentationBasedFoldingEnabled() const
+{
+    if (m_noIndentationBasedFolding)
+        return false;
+
+    return m_def.definition().indentationBasedFoldingEnabled();
+}
+
 QVector<Rule::Ptr> Context::rules() const
 {
     return m_rules;
@@ -91,7 +101,7 @@ Format Context::formatByName(const QString &name) const
         return format;
 
     // TODO we can avoid multiple lookups in the same definition here, many rules will share definitions
-    foreach (auto rule, m_rules) {
+    foreach (const auto &rule, m_rules) {
         auto defData = DefinitionData::get(rule->definition());
         format = defData->formatByName(name);
         if (format.isValid())
@@ -111,10 +121,11 @@ void Context::load(QXmlStreamReader& reader)
     m_attribute = reader.attributes().value(QStringLiteral("attribute")).toString();
     m_lineEndContext.parse(reader.attributes().value(QStringLiteral("lineEndContext")));
     m_lineEmptyContext.parse(reader.attributes().value(QStringLiteral("lineEmptyContext")));
-    m_fallthrough = reader.attributes().value(QStringLiteral("fallthrough")) == QLatin1String("true");
+    m_fallthrough = Xml::attrToBool(reader.attributes().value(QStringLiteral("fallthrough")));
     m_fallthroughContext.parse(reader.attributes().value(QStringLiteral("fallthroughContext")));
     if (m_fallthroughContext.isStay())
         m_fallthrough = false;
+    m_noIndentationBasedFolding = Xml::attrToBool(reader.attributes().value(QStringLiteral("noIndentationBasedFolding")));
 
     reader.readNext();
     while (!reader.atEnd()) {
@@ -147,14 +158,14 @@ void Context::resolveContexts()
     m_lineEndContext.resolve(def);
     m_lineEmptyContext.resolve(def);
     m_fallthroughContext.resolve(def);
-    foreach (auto rule, m_rules)
+    foreach (const auto &rule, m_rules)
         rule->resolveContext();
 }
 
 Context::ResolveState Context::resolveState()
 {
     if (m_resolveState == Unknown) {
-        foreach (auto rule, m_rules) {
+        foreach (const auto &rule, m_rules) {
             auto inc = std::dynamic_pointer_cast<IncludeRules>(rule);
             if (inc) {
                 m_resolveState = Unresolved;
@@ -212,7 +223,7 @@ void Context::resolveIncludes()
             m_attribute = context->attribute();
         }
         it = m_rules.erase(it);
-        foreach (auto rule, context->rules()) {
+        foreach (const auto &rule, context->rules()) {
             it = m_rules.insert(it, rule);
             ++it;
         }

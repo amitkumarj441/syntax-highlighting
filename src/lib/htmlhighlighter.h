@@ -30,6 +30,8 @@ class QTextStream;
 
 namespace SyntaxHighlighting {
 
+class HtmlHighlighterPrivate;
+
 class KF5SYNTAXHIGHLIGHTING_EXPORT HtmlHighlighter : public AbstractHighlighter
 {
 public:
@@ -42,12 +44,10 @@ public:
     void setOutputFile(FILE *fileHandle);
 
 protected:
-    void setFormat(int offset, int length, const Format &format) Q_DECL_OVERRIDE;
+    void applyFormat(int offset, int length, const Format &format) Q_DECL_OVERRIDE;
 
 private:
-    std::unique_ptr<QTextStream> m_out;
-    std::unique_ptr<QFile> m_file;
-    QString m_currentLine;
+    std::unique_ptr<HtmlHighlighterPrivate> d;
 };
 }
 

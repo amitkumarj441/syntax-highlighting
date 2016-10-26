@@ -27,7 +27,7 @@ class QString;
 template <typename T> class QVector;
 
 /**
- * @namespce SyntaxHighlighting
+ * @namespace SyntaxHighlighting
  *
  * Syntax highlighting engine for Kate syntax definitions.
  * In order to access the syntax highlighting Definition files, use the
@@ -52,13 +52,24 @@ class Theme;
  * system. If a Definition exists in the resource and on the file system,
  * then the one from the file system is chosen.
  *
- * @section repo_access Accessing the Definitions
+ * @section repo_access Definitions and Themes
  *
  * Typically, only one instance of the Repository is needed. This single
  * instance can be thought of as a singleton you keep alive throughout the
- * lifetime of your application.
+ * lifetime of your application. Then, either call definitionForName() with the
+ * given language name (e.g. "QML" or "Java"), or definitionForFileName() to
+ * obtain a Definition based on the filename/mimetype of the file. The
+ * function definitions() returns a list of all available syntax Definition%s.
  *
- * @see Definition
+ * In addition to Definitions, the Repository also provides a list of Themes.
+ * A Theme is defined by a set of default text style colors as well as editor
+ * colors. These colors together provide all required colros for drawing all
+ * primitives of a text editor. All available Theme%s can be queried through
+ * themes(), and a Theme with a specific name is obtained through theme().
+ * Additionally, defaultTheme() provides a way to obtain a default theme for
+ * either a light or a black color theme.
+ *
+ * @see Definition, Theme, AbstractHighlighter
  */
 class KF5SYNTAXHIGHLIGHTING_EXPORT Repository
 {
@@ -118,6 +129,23 @@ public:
     Theme theme(const QString &themeName) const;
 
     /**
+     * Built-in default theme types.
+     * @see defaultTheme()
+     */
+    enum DefaultTheme {
+        //! Theme with a light background color.
+        LightTheme,
+        //! Theme with a dark background color.
+        DarkTheme
+    };
+
+    /**
+     * Returns a default theme instance of the given type.
+     * The returned Theme is guaranteed to be a valid theme.
+     */
+    Theme defaultTheme(DefaultTheme t = LightTheme);
+
+    /**
      * Reloads the repository.
      * This is a moderately expensive operations and should thus only be
      * triggered when the installed syntax definition files changed.
@@ -126,6 +154,7 @@ public:
 
 private:
     Q_DISABLE_COPY(Repository)
+    friend class RepositoryPrivate;
     std::unique_ptr<RepositoryPrivate> d;
 };
 

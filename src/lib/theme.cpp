@@ -31,7 +31,7 @@ Theme::Theme(const Theme &copy)
     m_data = copy.m_data;
 }
 
-Theme::Theme(std::shared_ptr<ThemeData> data)
+Theme::Theme(ThemeData* data)
     : m_data(data)
 {
 }
@@ -48,7 +48,7 @@ Theme &Theme::operator=(const Theme &other)
 
 bool Theme::isValid() const
 {
-    return m_data.get();
+    return m_data.data();
 }
 
 QString Theme::name() const
@@ -65,6 +65,11 @@ QString Theme::translatedName() const
 bool Theme::isReadOnly() const
 {
     return m_data ? m_data->isReadOnly() : false;
+}
+
+QString Theme::filePath() const
+{
+    return m_data ? m_data->filePath() : QString();
 }
 
 QRgb Theme::textColor(TextStyle style) const
@@ -105,4 +110,9 @@ bool Theme::isUnderline(TextStyle style) const
 bool Theme::isStrikeThrough(TextStyle style) const
 {
     return m_data ? m_data->isStrikeThrough(style) : false;
+}
+
+QRgb Theme::editorColor(EditorColorRole role) const
+{
+    return m_data ? m_data->editorColor(role) : 0;
 }

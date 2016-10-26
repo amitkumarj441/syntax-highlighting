@@ -16,6 +16,7 @@
 */
 
 #include "syntaxhighlighter.h"
+#include "definition.h"
 #include "format.h"
 #include "state.h"
 #include "theme.h"
@@ -51,6 +52,14 @@ SyntaxHighlighter::~SyntaxHighlighter()
 {
 }
 
+void SyntaxHighlighter::setDefinition(const Definition& def)
+{
+    const auto needsRehighlight = definition() != def;
+    AbstractHighlighter::setDefinition(def);
+    if (needsRehighlight)
+        rehighlight();
+}
+
 void SyntaxHighlighter::highlightBlock(const QString& text)
 {
     State state;
@@ -77,9 +86,9 @@ void SyntaxHighlighter::highlightBlock(const QString& text)
         QMetaObject::invokeMethod(this, "rehighlightBlock", Qt::QueuedConnection, Q_ARG(QTextBlock, nextBlock));
 }
 
-void SyntaxHighlighter::setFormat(int offset, int length, const SyntaxHighlighting::Format& format)
+void SyntaxHighlighter::applyFormat(int offset, int length, const SyntaxHighlighting::Format& format)
 {
-    if (format.isNormal(theme()) || length == 0)
+    if (format.isDefaultTextStyle(theme()) || length == 0)
         return;
 
     QTextCharFormat tf;

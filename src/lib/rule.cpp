@@ -77,11 +77,17 @@ static int matchEscapedChar(const QString &text, int offset)
     return offset;
 }
 
-static QString replaceCaptures(const QString &pattern, const QStringList &captures)
+static QString quoteCapture(const QString &capture)
+{
+    auto quoted = capture;
+    return quoted.replace(QRegularExpression(QStringLiteral("(\\W)")), QStringLiteral("\\\\1"));
+}
+
+static QString replaceCaptures(const QString &pattern, const QStringList &captures, bool quote)
 {
     auto result = pattern;
     for (int i = 1; i < captures.size(); ++i) {
-        result.replace(QLatin1Char('%') + QString::number(i), captures.at(i));
+        result.replace(QLatin1Char('%') + QString::number(i), quote ? quoteCapture(captures.at(i)) : captures.at(i));
     }
     return result;
 }
@@ -139,6 +145,16 @@ int Rule::requiredColumn() const
     return m_column;
 }
 
+FoldingRegion Rule::beginRegion() const
+{
+    return m_beginRegion;
+}
+
+FoldingRegion Rule::endRegion() const
+{
+    return m_endRegion;
+}
+
 bool Rule::load(QXmlStreamReader &reader)
 {
     Q_ASSERT(reader.tokenType() == QXmlStreamReader::StartElement);
@@ -146,13 +162,20 @@ bool Rule::load(QXmlStreamReader &reader)
     m_attribute = reader.attributes().value(QStringLiteral("attribute")).toString();
     if (reader.name() != QLatin1String("IncludeRules")) // IncludeRules uses this with a different semantic
         m_context.parse(reader.attributes().value(QStringLiteral("context")));
-    m_firstNonSpace = reader.attributes().value(QStringLiteral("firstNonSpace")) == QLatin1String("true");
-    m_lookAhead = reader.attributes().value(QStringLiteral("lookAhead")) == QLatin1String("true");
+    m_firstNonSpace = Xml::attrToBool(reader.attributes().value(QStringLiteral("firstNonSpace")));
+    m_lookAhead = Xml::attrToBool(reader.attributes().value(QStringLiteral("lookAhead")));
     bool colOk = false;
     m_column = reader.attributes().value(QStringLiteral("column")).toInt(&colOk);
     if (!colOk)
         m_column = -1;
-    m_dynamic = reader.attributes().value(QStringLiteral("dynamic")) == QLatin1String("true");
+    m_dynamic = Xml::attrToBool(reader.attributes().value(QStringLiteral("dynamic")));
+
+    auto regionName = reader.attributes().value(QLatin1String("beginRegion"));
+    if (!regionName.isEmpty())
+        m_beginRegion = FoldingRegion(FoldingRegion::Begin, DefinitionData::get(m_def.definition())->foldingRegionId(regionName.toString()));
+    regionName = reader.attributes().value(QLatin1String("endRegion"));
+    if (!regionName.isEmpty())
+        m_endRegion = FoldingRegion(FoldingRegion::End, DefinitionData::get(m_def.definition())->foldingRegionId(regionName.toString()));
 
     auto result = doLoad(reader);
 
@@ -190,7 +213,7 @@ bool Rule::load(QXmlStreamReader &reader)
 void Rule::resolveContext()
 {
     m_context.resolve(m_def.definition());
-    foreach (auto rule, m_subRules)
+    foreach (const auto &rule, m_subRules)
         rule->resolveContext();
 }
 
@@ -208,7 +231,7 @@ MatchResult Rule::match(const QString &text, int offset, const QStringList &capt
     if (result.offset() == offset || result.offset() == text.size())
         return result;
 
-    foreach (auto subRule, m_subRules) {
+    foreach (const auto &subRule, m_subRules) {
         const auto subResult = subRule->match(text, result.offset(), QStringList());
         if (subResult.offset() > result.offset())
             return MatchResult(subResult.offset(), result.captures());
@@ -291,12 +314,22 @@ bool DetectChar::doLoad(QXmlStreamReader& reader)
     if (s.isEmpty())
         return false;
     m_char = s.at(0);
+    if (isDynamic()) {
+        m_captureIndex = m_char.digitValue();
+    }
     return true;
 }
 
 MatchResult DetectChar::doMatch(const QString& text, int offset, const QStringList &captures)
 {
-    Q_UNUSED(captures); // TODO
+    if (isDynamic()) {
+        if (captures.size() <= m_captureIndex || captures.at(m_captureIndex).isEmpty())
+            return offset;
+        if (text.at(offset) == captures.at(m_captureIndex).at(0))
+            return offset + 1;
+        return offset;
+    }
+
     if (text.at(offset) == m_char)
         return offset + 1;
     return offset;
@@ -514,7 +547,14 @@ MatchResult Int::doMatch(const QString& text, int offset, const QStringList &cap
 
 bool KeywordListRule::doLoad(QXmlStreamReader& reader)
 {
-    m_listName = reader.attributes().value(QStringLiteral("String")).toString();
+    m_listName = reader.attributes().value(QLatin1String("String")).toString();
+    if (reader.attributes().hasAttribute(QLatin1String("insensitive"))) {
+        m_hasCaseSensitivityOverride = true;
+        m_caseSensitivityOverride = Xml::attrToBool(reader.attributes().value(QLatin1String("insensitive"))) ?
+            Qt::CaseInsensitive : Qt::CaseSensitive;
+    } else {
+        m_hasCaseSensitivityOverride = false;
+    }
     return !m_listName.isEmpty();
 }
 
@@ -536,8 +576,13 @@ MatchResult KeywordListRule::doMatch(const QString& text, int offset, const QStr
     if (newOffset == offset)
         return offset;
 
-    if (m_keywordList.contains(text.midRef(offset, newOffset - offset)))
-        return newOffset;
+    if (m_hasCaseSensitivityOverride) {
+        if (m_keywordList.contains(text.midRef(offset, newOffset - offset), m_caseSensitivityOverride))
+            return newOffset;
+    } else {
+        if (m_keywordList.contains(text.midRef(offset, newOffset - offset)))
+            return newOffset;
+    }
     return offset;
 }
 
@@ -591,8 +636,8 @@ bool RegExpr::doLoad(QXmlStreamReader& reader)
 {
     m_pattern = reader.attributes().value(QStringLiteral("String")).toString();
     m_regexp.setPattern(m_pattern);
-    const auto isMinimal = reader.attributes().value(QStringLiteral("minimal")) == QLatin1String("true");
-    const auto isCaseInsensitive = reader.attributes().value(QStringLiteral("insensitive")) == QLatin1String("true");
+    const auto isMinimal = Xml::attrToBool(reader.attributes().value(QStringLiteral("minimal")));
+    const auto isCaseInsensitive = Xml::attrToBool(reader.attributes().value(QStringLiteral("insensitive")));
     m_regexp.setPatternOptions(
         (isMinimal ? QRegularExpression::InvertedGreedinessOption : QRegularExpression::NoPatternOption) |
         (isCaseInsensitive ? QRegularExpression::CaseInsensitiveOption : QRegularExpression::NoPatternOption));
@@ -604,7 +649,7 @@ MatchResult RegExpr::doMatch(const QString& text, int offset, const QStringList 
     Q_ASSERT(m_regexp.isValid());
 
     if (isDynamic())
-        m_regexp.setPattern(replaceCaptures(m_pattern, captures));
+        m_regexp.setPattern(replaceCaptures(m_pattern, captures, true));
 
     auto result = m_regexp.match(text, offset, QRegularExpression::NormalMatch, QRegularExpression::DontCheckSubjectStringMatchOption);
     if (result.capturedStart() == offset)
@@ -616,7 +661,7 @@ MatchResult RegExpr::doMatch(const QString& text, int offset, const QStringList 
 bool StringDetect::doLoad(QXmlStreamReader& reader)
 {
     m_string = reader.attributes().value(QStringLiteral("String")).toString();
-    m_caseSensitivity = reader.attributes().value(QStringLiteral("insensitive")) == QLatin1String("true") ? Qt::CaseInsensitive : Qt::CaseSensitive;
+    m_caseSensitivity = Xml::attrToBool(reader.attributes().value(QStringLiteral("insensitive"))) ? Qt::CaseInsensitive : Qt::CaseSensitive;
     return !m_string.isEmpty();
 }
 
@@ -624,7 +669,7 @@ MatchResult StringDetect::doMatch(const QString& text, int offset, const QString
 {
     auto pattern = m_string;
     if (isDynamic())
-        pattern = replaceCaptures(m_string, captures);
+        pattern = replaceCaptures(m_string, captures, false);
     if (text.midRef(offset, pattern.size()).compare(pattern, m_caseSensitivity) == 0)
         return offset + pattern.size();
     return offset;

@@ -66,7 +66,7 @@ public:
     }
 
 protected:
-    void setFormat(int offset, int length, const Format &format) Q_DECL_OVERRIDE
+    void applyFormat(int offset, int length, const Format &format) Q_DECL_OVERRIDE
     {
         if (format.name().isEmpty())
             m_out << "<dsNormal>" << m_currentLine.midRef(offset, length) << "</dsNormal>";
@@ -87,6 +87,7 @@ public:
     explicit TestHighlighterTest(QObject *parent = Q_NULLPTR) : QObject(parent), m_repo(Q_NULLPTR) {}
 private:
         Repository *m_repo;
+        QSet<QString> m_coveredDefinitions;
 
 private Q_SLOTS:
     void initTestCase()
@@ -97,6 +98,24 @@ private Q_SLOTS:
 
     void cleanupTestCase()
     {
+        QFile coveredList(QLatin1String(TESTBUILDDIR "/covered-definitions.txt"));
+        QFile uncoveredList(QLatin1String(TESTBUILDDIR "/uncovered-definition.txt"));
+        QVERIFY(coveredList.open(QFile::WriteOnly));
+        QVERIFY(uncoveredList.open(QFile::WriteOnly));
+
+        int count = 0;
+        foreach (const auto &def, m_repo->definitions()) {
+            if (def.isHidden())
+                continue;
+            ++count;
+            if (m_coveredDefinitions.contains(def.name()))
+                coveredList.write(def.name().toUtf8() + '\n');
+            else
+                uncoveredList.write(def.name().toUtf8() + '\n');
+        }
+
+        qDebug() << "Syntax definitions with test coverage:" << ((float)m_coveredDefinitions.size() * 100.0f / (float)count) << "%";
+
         delete m_repo;
         m_repo = Q_NULLPTR;
     }
@@ -141,11 +160,12 @@ private Q_SLOTS:
             def = m_repo->definitionForName(syntax);
 
         TestHighlighter highlighter;
-        highlighter.setTheme(m_repo->theme(QLatin1String("Default")));
+        highlighter.setTheme(m_repo->defaultTheme());
         QVERIFY(highlighter.theme().isValid());
 
         QVERIFY(def.isValid());
         qDebug() << "Using syntax" << def.name();
+        m_coveredDefinitions.insert(def.name());
         highlighter.setDefinition(def);
         highlighter.highlightFile(inFile, outFile);
 
@@ -159,7 +179,7 @@ private Q_SLOTS:
 
 };
 
-QTEST_MAIN(TestHighlighterTest)
+QTEST_GUILESS_MAIN(TestHighlighterTest)
 
 #include "testhighlighter.moc"
 
